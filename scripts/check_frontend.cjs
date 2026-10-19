@@ -1,0 +1,28 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const elements={};const location={pathname:'/register',hash:'',search:''};
+const c={window:{addEventListener(){}},document:{addEventListener(){},querySelector(s){return elements[s]??={innerHTML:'',textContent:''}}},location,history:{replaceState(a,b,url){const u=new URL(url,'https://example.test');location.pathname=u.pathname;location.hash=u.hash;location.search=u.search}},navigator:{},console,Map,Set,Date,URLSearchParams};
+vm.createContext(c);vm.runInContext(fs.readFileSync('dist/auth.js','utf8')+'\n'+fs.readFileSync('dist/app.js','utf8').replace(/^start\(\);$/m,''),c);
+vm.runInContext("mode='api';serverStatus={registration_enabled:true};authPage('register')",c);
+assert(!elements['#app'].innerHTML.includes('Workspace setup code'));
+assert(elements['#app'].innerHTML.includes('Confirm password'));
+assert(elements['#app'].innerHTML.includes('Free beta'));
+const form={elements:{confirm:{focus(){}}}};
+c.FormData=class{*[Symbol.iterator](){yield ['name','Owner'];yield ['password','long-password-one'];yield ['confirm','long-password-two']}};
+(async()=>{
+ await elements['#access-form'].onsubmit({preventDefault(){},target:form,submitter:{}});
+ assert(elements['#auth-error'].textContent.includes('don’t match'));
+ location.pathname='/reset-password';location.search='?token=example-secret-token';vm.runInContext('resetPage()',c);
+ assert(elements['#auth-content'].innerHTML.includes('Set a new password'));assert.equal(location.search,'');
+ location.pathname='/verify-email';location.search='?token=example-verification-token';vm.runInContext('verificationPage()',c);
+ assert(elements['#auth-content'].innerHTML.includes('Verify email'));assert.equal(location.search,'');
+ location.pathname='/app';vm.runInContext('state=null;route()',c);
+ assert.equal(location.pathname,'/login');assert(elements['#app'].innerHTML.includes('Welcome back'));
+ const billing=vm.runInContext("state={me:{role:'owner'}};billingSection()",c);
+ assert(billing.includes('No payment scheduled'));assert(!billing.includes('Upgrade'));
+ c.sourceText='https://example.com/\"bad\"\n\n<script>alert(1)</script>';
+ const html=vm.runInContext('formattedText(sourceText)',c);
+ assert(!html.includes('<script>'));assert(html.includes('&quot;'));assert(html.includes('noopener noreferrer'));
+ const composer=vm.runInContext("state={me:{role:'owner'},capabilities:{search:true}};chatComposer({id:'test',name:'Research',status:'active'})",c);
+ assert(composer.includes('Agent workflow'));assert(composer.includes('Chat only'));assert(composer.includes('Search only'));
+ console.log('Public signup, password confirmation, token clearing, login guard, free plan and source escaping passed');
+})().catch(e=>{console.error(e);process.exit(1)});
